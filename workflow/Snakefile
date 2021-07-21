@@ -1,0 +1,131 @@
+import sys
+import peppy
+import glob
+
+configfile: "config/config.yaml"
+pepfile: "config/pep.yaml"
+
+SAMPLES = [x.sample_name for x in pep.samples]
+SUBSAMPLE_TABLE = pep.subsample_table
+#SUBSAMPLE_NAMES = [expand("{s}-{ss}",s=x, ss=SUBSAMPLE_TABLE[SUBSAMPLE_TABLE['sample_name'] == x] for x in SAMPLES]
+
+MAIN_CONFIG = config.get("MAIN_CONFIG",'config/config.yaml')
+
+rule all:
+    input:
+        expand("results/star/{s}",s=SAMPLES[0]),
+
+# ------------------------------------------------------------------------------
+# Utility functions
+# ------------------------------------------------------------------------------
+
+def get_sra_accession(samp, sub):
+    return [x.strip() for x in pep.subsample_table[(pep.subsample_table['sample_name']==samp) & (pep.subsample_table['subsample_name']==sub)].sra.tolist()]
+
+def get_fqs(samp,subsamp):
+    srr = get_sra_accession(samp, subsamp)
+    srr = srr[0] if len(srr) == 1 else srr # need update this to enforce only 1 SRA per subsample
+    dd = checkpoints.fastq_dump.get(sample=samp, subsample=subsamp).output
+    patt = "{dumpdir}/{srr}*fastq".format(dumpdir=dd, srr=srr)
+    res = sorted(glob.glob(patt))
+    return res
+
+flatten = lambda t: [item for sublist in t for item in sublist]
+
+# ------------------------------------------------------------------------------
+# Rules
+# ------------------------------------------------------------------------------
+
+checkpoint fastq_dump:
+    output:
+        temp(directory("results/fastq-dump/{sample}/{subsample}"))
+    threads:
+        22
+    resources:
+        time=60,
+        mem=config.get("FASTERQDUMP_MEM","8000"),
+        cpus=1
+    params:
+        sra = lambda wc: get_sra_accession(wc.sample, wc.subsample)
+    conda:
+        "envs/sratools.yaml"
+    shell:
+        """
+        mkdir -p {output} &&
+        fasterq-dump --mem {resources.mem}MB -s -S --include-technical -e {threads} -O {output}/ {params.sra}
+        """
+
+rule concat_fqs:
+    input:
+        lambda wc: flatten([get_fqs(wc.sample,x) for x in  pep.get_sample("cuff").subsample_name])
+    output:
+        temp("results/fastq-concat/{sample}_r1.fq.gz")
+    shell:
+        "cat {input} > {output}"
+
+rule trim_se:
+    input:
+        fq1 = "results/fastq-concat/{sample}_r1.fq.gz"
+    output:
+        r1 = temp("results/fastq/{sample}_r1.trimmed.fq.gz"),
+        html = "results/fastq/{sample}_fastp.html",
+        json = "results/fastq/{sample}_fastp.json"
+    threads:
+        12
+    resources:
+        time=60,
+        mem=20000,
+        cpus=12
+    conda:
+        "envs/fastp.yaml"
+    shell:
+        """
+        fastp --in1 {input.fq1} \
+        --out1 {output.r1} \
+        -j {output.json} -h {output.html} \
+        -w {threads} -L -R {wildcards.sample}_fastp
+        """
+
+rule star_idx:
+    input:
+        fa = config.get("GENOME"),
+        gtf = config.get("GTF")
+    output:
+        directory("results/idx/star")
+    conda:
+        "envs/star.yaml"
+    shell:
+        """
+        mkdir -p {output} &&
+        STAR --runMode genomeGenerate --genomeFastaFiles {input.fa} \
+            --genomeDir {output} --sjdbGTFfile {input.gtf} \
+            --runThreadN {threads} --sjdbOverhang 149 --genomeSAsparseD 1 \
+            --genomeSAindexNbases 12
+        """
+
+rule star_aln:
+    input:
+        idx=rules.star_idx.output,
+        r1=rules.trim_se.output.r1,
+    output:
+        directory("results/star/{sample}/")
+    threads:
+        24
+    conda:
+        "envs/star.yaml"
+    resources:
+        time=480,
+        mem=64000,
+        cpus=24
+    shell:
+        """
+        mkdir -p {output}
+        STAR \
+        --genomeDir {input.idx} --runThreadN {threads} \
+        --outFileNamePrefix {output}/ \
+        --genomeLoad NoSharedMemory --readFilesCommand zcat \
+        --outSAMtype BAM SortedByCoordinate --outSAMunmapped Within \
+        --readFilesIn {input.r1} \
+        --outSAMmultNmax 1 \
+        --quantMode GeneCounts
+        """
