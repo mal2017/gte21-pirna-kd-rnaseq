@@ -13,7 +13,9 @@ MAIN_CONFIG = config.get("MAIN_CONFIG",'config/config.yaml')
 
 rule all:
     input:
-        expand("results/star/{s}",s=SAMPLES[0]),
+        #expand("results/fastq-concat/{s}_r1.fq.gz",s=SAMPLES)
+        #expand("results/star/{s}",s=SAMPLES),
+        "results/deseq2/pirna_kd_vs_control.res.tsv"
 
 # ------------------------------------------------------------------------------
 # Utility functions
@@ -60,6 +62,8 @@ rule concat_fqs:
         lambda wc: flatten([get_fqs(wc.sample,x) for x in  pep.get_sample("cuff").subsample_name])
     output:
         temp("results/fastq-concat/{sample}_r1.fq.gz")
+    threads:
+        1
     shell:
         "cat {input} > {output}"
 
@@ -129,3 +133,16 @@ rule star_aln:
         --outSAMmultNmax 1 \
         --quantMode GeneCounts
         """
+
+
+
+rule deseq2_diff_expr:
+    input:
+        ["results/star/{s}/ReadsPerGene.out.tab".format(s=x) for x in SAMPLES]
+    output:
+        tsv = "results/deseq2/pirna_kd_vs_control.res.tsv",
+        dds = "results/deseq2/pirna_kd_vs_control.dds.rds"
+    conda:
+        "envs/diffexp.yaml"
+    script:
+        "scripts/diff-exp.R"

@@ -1,3 +1,4 @@
 Log.out
 results/
 .snakemake/
+fasterq*/
