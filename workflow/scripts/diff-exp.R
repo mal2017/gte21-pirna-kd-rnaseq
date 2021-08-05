@@ -4,7 +4,7 @@ library(DESeq2)
 ## Args
 
 #FILES = Sys.glob("results/star/*/ReadsPerGene.out.tab")
-FILES = snakemake@input
+FILES = snakemake@params[['tab']]
 FORMULA = as.formula("~condition")
 
 message(FILES)

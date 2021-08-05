@@ -141,11 +141,13 @@ rule star_aln:
 
 rule deseq2_diff_expr:
     input:
-        ["results/star/{s}/ReadsPerGene.out.tab".format(s=x) for x in SAMPLES]
+        ["results/star/{s}/".format(s=x) for x in SAMPLES]
     output:
         tsv = "results/deseq2/pirna_kd_vs_control.res.tsv",
         dds = "results/deseq2/pirna_kd_vs_control.dds.rds"
     conda:
         "envs/diffexp.yaml"
+    params:
+        tab = ["results/star/{s}/ReadsPerGene.out.tab".format(s=x) for x in SAMPLES]
     script:
         "scripts/diff-exp.R"
