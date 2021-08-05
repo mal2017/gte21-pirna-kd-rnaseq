@@ -123,7 +123,7 @@ rule star_aln:
     resources:
         time=480,
         mem=64000,
-        cpus=24
+        cpus=8
     shell:
         """
         mkdir -p {output}
