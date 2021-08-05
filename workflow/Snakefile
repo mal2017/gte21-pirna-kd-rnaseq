@@ -98,6 +98,9 @@ rule star_idx:
         directory("results/idx/star")
     conda:
         "envs/star.yaml"
+    resources:
+        time=480,
+        mem=64000,
     shell:
         """
         mkdir -p {output} &&

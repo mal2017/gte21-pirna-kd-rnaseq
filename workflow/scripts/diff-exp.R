@@ -20,6 +20,8 @@ cd <- enframe(FILES,"sample","file")
 # yb is treated as control for germline - this is also done in the original manuscript
 cd <- cd %>%
   mutate(condition = map_lgl(sample,~any(str_detect(.,c("ovary","w_","yb"))))) %>%
+  #mutate(condition = map_lgl(sample,~any(str_detect(.,c("w_","yb"))))) %>%
+  #mutate(condition = map_lgl(sample,~any(str_detect(.,c("w_"))))) %>%
   mutate(condition = ifelse(condition,"control",sample)) %>%
   column_to_rownames("sample")
 
@@ -29,7 +31,7 @@ dat <- FILES %>%
 strand_counts <- list("unstranded","first_strand","second_strand") %>%
   set_names(.,.) %>%
   map(~sum(dat[,.]))
-  
+
 which_col <- ifelse(between(strand_counts$first_strand/strand_counts$unstranded,0.3,0.7),"unstranded",
                     names(which.max(strand_counts[c("first_strand","second_strand")])))
 
@@ -58,6 +60,7 @@ res <- resultsNames(dds) %>%
   .[names(.)!="Intercept"] %>%
   map(~results(dds,name=.,alpha=0.05)) %>%
   imap(~as_tibble(lfcShrink(dds,res=.x,coef = .y,type = "normal",),rownames = "gene_id")) %>%
+  #map(as_tibble, rownames="gene_id") %>%
   bind_rows(.id="comparison")
 
 ## export
